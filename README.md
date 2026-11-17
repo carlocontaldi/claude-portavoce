@@ -1,4 +1,7 @@
-# Claude Portavoce
+<h1 align="center">
+  <img src="assets/portavoce-logo.png" alt="" width="120"><br>
+  Claude Portavoce
+</h1>
 
 > **por·ta·vo·ce** · Italian /portaˈvotʃe/ (*por-ta-VOH-cheh*) · *noun*, masculine and feminine, plural unchanged
 >
