@@ -30,6 +30,7 @@ from limitwatch import push as ntfy_push
 DIR = Path(os.environ.get('PORTAVOCE_DIR') or Path.home() / '.claude' / 'portavoce')
 NTFY_URL = (os.environ.get('PORTAVOCE_NTFY_URL') or 'https://ntfy.sh').rstrip('/') + '/'
 TOPIC_PREFIX = 'claude-portavoce'
+ICON_URL = 'https://raw.githubusercontent.com/carlocontaldi/claude-portavoce/main/assets/portavoce-icon-64.png'
 LOOKUP_TRIES = 10  # the limit error may not be in the transcript yet when the hook fires
 GROUP = 120  # seconds: caps resetting this close together are announced in one push
 
@@ -85,7 +86,8 @@ def push(text, settings):
         text,
         log,
         title='Claude limit restored',
-        tags='white_check_mark',
+        tags='parrot,white_check_mark',
+        icon=ICON_URL,
         email=settings['notify_email'],
         token=settings['ntfy_token'],
     )
@@ -146,7 +148,8 @@ def send_test(settings):
         'Claude Portavoce test: if you can read this, the topic works.',
         log,
         title='Claude Portavoce test',
-        tags='bell',
+        tags='parrot,bell',
+        icon=ICON_URL,
         token=settings['ntfy_token'],
     )
     return 'Sent: it should show up in the ntfy app now.' if sent else f'Not sent; {DIR / "log.txt"} says why.'

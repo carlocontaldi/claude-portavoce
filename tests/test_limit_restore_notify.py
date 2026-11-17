@@ -184,7 +184,8 @@ class WatchTest(WithLogDir):
         self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
         [(path, headers, _)] = self.server.requests
         self.assertEqual(path, '/secret-topic')
-        self.assertEqual((headers['Title'], headers['Tags']), ('Claude limit restored', 'white_check_mark'))
+        self.assertEqual((headers['Title'], headers['Tags']), ('Claude limit restored', 'parrot,white_check_mark'))
+        self.assertEqual(headers['Icon'], notify.ICON_URL)
         self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.'])
         self.sleep_until.assert_called_once_with(reset + notify.MARGIN)
         self.assertEqual(list(self.dir.glob('*.lock')), [])
@@ -324,7 +325,7 @@ class PushCommandTest(WithLogDir):
         [(path, headers, body)] = self.server.requests
         self.assertEqual(path, '/secret-topic')
         self.assertNotIn('Email', headers)
-        self.assertEqual(headers['Title'], 'Claude Portavoce test')
+        self.assertEqual((headers['Title'], headers['Tags']), ('Claude Portavoce test', 'parrot,bell'))
         self.assertIn(b'the topic works', body)
 
     def test_a_failure_points_at_the_log(self):
@@ -349,6 +350,12 @@ class NtfyUrlTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {'PORTAVOCE_NTFY_URL': 'http://localhost:8080'}):
             importlib.reload(notify)
             self.assertEqual(notify.NTFY_URL, 'http://localhost:8080/')
+
+
+class IconTest(unittest.TestCase):
+    def test_the_icon_url_names_a_file_in_this_repository(self):
+        path = notify.ICON_URL.split('/main/', 1)[1]
+        self.assertTrue((HOOKS.parent / path).is_file())
 
 
 class VendoredTest(unittest.TestCase):
