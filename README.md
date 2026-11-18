@@ -71,6 +71,14 @@ Versions before 0.2.0 read these values from files in `~/.claude/limit-watch/`, 
 
 A topic on the public server is readable and writable by anyone who knows its name, which is why the name is random and not a fixed one such as `claude-portavoce`. ntfy.sh [offers reserved topics with access control on paid plans](https://docs.ntfy.sh/terms/).
 
+## With Goon
+
+When [Claude Goon](https://github.com/carlocontaldi/claude-goon) is installed too, the two send one email instead of two, so the free tier's five emails a day last longer. It applies when Goon will email the same address as Portavoce and its resume time is within five seconds of Portavoce's push time (both are set a minute after the reset). Goon puts Portavoce's announcement at the start of its own email (`Your 5-hour limit has reset. You can continue. Goon: resumed 2 closed sessions.`). Portavoce still pushes to its own topic, without the email, as soon as Goon has claimed the email.
+
+Portavoce sends its own email in every other case: no Goon, a Goon without an email set or with another address, quiet hours that move Goon's resume, a Goon that is off or has nothing to report (every session had already continued), a Goon whose push failed, and a cap that resets later than the one Goon waits for. When Goon claimed the email but sent nothing, your phone gets a second push from Portavoce, the one with the email. If Goon has not claimed the email within 10 minutes, Portavoce sends its own and Goon then pushes without one. If the shared folder `~/.claude/meridiana/` cannot be used, each plugin sends its own email.
+
+A decision file settles who emails, so the two never both send the email for one reset; the exceptions are listed in the [Meridiana README](https://github.com/carlocontaldi/claude-meridiana#one-email-for-both-plugins). The files hold only which caps reset and when, and stay on this machine. The log says `left the announcement with Goon` when it hands over.
+
 ## Check it
 
 `~/.claude/portavoce/log.txt` records each cap seen (`5-hour limit and weekly spend limit; will push at ...`), each push (`pushed (attempt 1)`), and failures. A value you left unset or empty shows up there as `missing plugin options: ...`, and no push is sent. The folder is `~/.claude/portavoce/`; set `PORTAVOCE_DIR` to use another. To test against a local server, set `PORTAVOCE_NTFY_URL`.
