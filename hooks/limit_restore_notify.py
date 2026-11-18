@@ -68,11 +68,11 @@ def push(text, settings, with_email=True):
         settings['ntfy_topic'],
         text,
         log,
-        title='Claude limit restored',
-        tags='parrot,white_check_mark',
+        title='🦜✅ Claude limit restored',
         icon=ICON_URL,
         email=settings['notify_email'] if with_email else '',
         token=settings['ntfy_token'],
+        signature='Claude Portavoce',
     )
 
 

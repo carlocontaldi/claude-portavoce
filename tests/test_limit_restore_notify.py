@@ -10,6 +10,7 @@ import tempfile
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
+from email.header import decode_header, make_header
 from pathlib import Path
 from unittest import mock
 
@@ -153,6 +154,12 @@ class Recorder(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def title_of(headers):
+    """The title as ntfy reads it: emoji travel as an RFC 2047 word."""
+    return str(make_header(decode_header(headers['Title'])))
+
+
+SIGNED = '\n\n— Claude Portavoce'  # ends every email, never a push to the phone alone
 SETTINGS = {'ntfy_topic': 'secret-topic', 'notify_email': 'me@example.com', 'ntfy_token': 'tk_secret'}
 ENV = {f'CLAUDE_PLUGIN_OPTION_{k.upper()}': v for k, v in SETTINGS.items()}
 
@@ -190,9 +197,9 @@ class WatchTest(WithLogDir):
         self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
         [(path, headers, _)] = self.server.requests
         self.assertEqual(path, '/secret-topic')
-        self.assertEqual((headers['Title'], headers['Tags']), ('Claude limit restored', 'parrot,white_check_mark'))
+        self.assertEqual((title_of(headers), headers.get('Tags')), ('🦜✅ Claude limit restored', None))
         self.assertEqual(headers['Icon'], notify.ICON_URL)
-        self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.'])
+        self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.' + SIGNED])
         self.sleep_until.assert_called_once_with(reset + notify.MARGIN)
         self.assertEqual(list(self.dir.glob('*.lock')), [])
 
@@ -302,7 +309,7 @@ class WatchTest(WithLogDir):
 
     def test_a_weekly_limit_without_structured_info_is_read_from_its_text(self):
         self.watch(error_row("You've hit your weekly limit · resets 2pm (UTC)"))
-        self.assertEqual(self.bodies(), ['Your weekly limit has reset. You can continue.'])
+        self.assertEqual(self.bodies(), ['Your weekly limit has reset. You can continue.' + SIGNED])
 
     def test_the_spend_cap_that_resets_later_gets_its_own_push(self):
         five, monthly = at(hours=2), at(days=20)
@@ -320,7 +327,7 @@ class WatchTest(WithLogDir):
                 'Usage credits stay capped by your monthly spend limit until '
             )
         )
-        self.assertEqual(second, 'Your monthly spend limit has reset. You can continue.')
+        self.assertEqual(second, 'Your monthly spend limit has reset. You can continue.' + SIGNED)
         self.assertEqual(
             [call.args[0] for call in self.sleep_until.call_args_list], [five + notify.MARGIN, monthly + notify.MARGIN]
         )
@@ -335,7 +342,7 @@ class WatchTest(WithLogDir):
         self.watch(error_row(**info))
         first, second = self.bodies()
         self.assertIn('Usage credits stay capped by your weekly spend limit until', first)
-        self.assertEqual(second, 'Your weekly spend limit has reset. You can continue.')
+        self.assertEqual(second, 'Your weekly spend limit has reset. You can continue.' + SIGNED)
 
     def test_caps_that_reset_together_are_one_push_saying_both(self):
         reset = int(at(hours=2).timestamp())
@@ -347,7 +354,7 @@ class WatchTest(WithLogDir):
         }
         self.watch(error_row(**info))
         self.assertEqual(
-            self.bodies(), ['Your 5-hour limit and individual spend limit have both reset. You can continue.']
+            self.bodies(), ['Your 5-hour limit and individual spend limit have both reset. You can continue.' + SIGNED]
         )
 
     def test_a_spend_cap_too_far_off_to_wait_for_is_named_but_not_watched(self):
