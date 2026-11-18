@@ -16,7 +16,7 @@ from unittest import mock
 HOOKS = Path(__file__).resolve().parent.parent / 'hooks'
 sys.path.insert(0, str(HOOKS))
 import limit_restore_notify as notify  # noqa: E402
-from limitwatch import Cap  # noqa: E402
+from limitwatch import Cap, Offer  # noqa: E402
 
 UTC = timezone.utc
 
@@ -42,6 +42,9 @@ class WithLogDir(unittest.TestCase):
         patcher = mock.patch.object(notify, 'DIR', self.dir)
         patcher.start()
         self.addCleanup(patcher.stop)
+        shared = mock.patch.dict(os.environ, {'MERIDIANA_DIR': str(self.dir / 'meridiana')})
+        shared.start()
+        self.addCleanup(shared.stop)
 
     def log_text(self):
         return Path(self.dir, 'log.txt').read_text()
@@ -169,6 +172,9 @@ class WatchTest(WithLogDir):
         sleeper = mock.patch.object(notify, 'sleep_until')
         self.sleep_until = sleeper.start()
         self.addCleanup(sleeper.stop)
+        poll = mock.patch('limitwatch.HANDOVER_POLL', 0.01)
+        poll.start()
+        self.addCleanup(poll.stop)
 
     def watch(self, *rows):
         transcript = self.dir / 'transcript.jsonl'
@@ -189,6 +195,110 @@ class WatchTest(WithLogDir):
         self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.'])
         self.sleep_until.assert_called_once_with(reset + notify.MARGIN)
         self.assertEqual(list(self.dir.glob('*.lock')), [])
+
+    def goon_offers(self, reset, email=SETTINGS['notify_email'], answer=None):
+        """A Goon watcher that will email at the reset; `answer(offer)` plays it once Portavoce leaves a note."""
+        offer = Offer(reset + notify.MARGIN, email)
+        offer.__enter__()
+        self.addCleanup(offer.__exit__)
+        if answer:
+
+            def wait_for_the_note():
+                while not offer.note.exists():
+                    threading.Event().wait(0.01)
+                answer(offer)
+
+            threading.Thread(target=wait_for_the_note, daemon=True).start()
+        return offer
+
+    def test_the_announcement_goon_sends_is_not_emailed_again_but_still_pushed_to_the_phone(self):
+        reset = at(hours=2)
+        taken = []
+
+        def goon_sends(offer):
+            offer.claim()
+            taken.append(offer.read_note())
+            offer.delivered()
+            offer.__exit__()
+
+        self.goon_offers(reset, answer=goon_sends)
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, headers, _)] = self.server.requests
+        self.assertNotIn('Email', headers)
+        self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.'])
+        self.assertEqual(taken, [([Cap('five_hour', reset)], [])])
+
+    def test_an_announcement_goon_did_not_send_is_emailed_after_all(self):
+        reset = at(hours=2)
+        self.goon_offers(reset, answer=lambda offer: offer.__exit__())
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, headers, _)] = self.server.requests
+        self.assertEqual(headers['Email'], 'me@example.com')
+
+    def test_an_announcement_goon_claimed_but_failed_to_send_is_emailed_after_all(self):
+        reset = at(hours=2)
+
+        def goon_fails(offer):
+            offer.claim()
+            offer.__exit__()
+
+        self.goon_offers(reset, answer=goon_fails)
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, first, _), (_, second, _)] = self.server.requests
+        self.assertNotIn('Email', first)  # the phone was told as soon as Goon claimed the email
+        self.assertEqual(second['Email'], 'me@example.com')
+
+    def test_the_phone_is_pushed_as_soon_as_goon_claims_the_email_not_when_goon_has_finished(self):
+        reset = at(hours=2)
+
+        def goon_sends_after_the_phone_push(offer):
+            offer.claim()
+            for _ in range(500):
+                if self.server.requests:
+                    break
+                threading.Event().wait(0.01)
+            self.assertEqual(len(self.server.requests), 1)
+            offer.delivered()
+            offer.__exit__()
+
+        self.goon_offers(reset, answer=goon_sends_after_the_phone_push)
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, headers, _)] = self.server.requests
+        self.assertNotIn('Email', headers)
+
+    def test_an_intent_stands_while_portavoce_waits_and_goes_when_it_is_done(self):
+        reset = at(hours=2)
+        seen = []
+        self.sleep_until.side_effect = lambda until: seen.append(
+            sorted(p.name for p in (self.dir / 'meridiana' / 'handover').glob('*.intent'))
+        )
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        self.assertEqual(seen, [[f'{int((reset + notify.MARGIN).timestamp())}.intent']])
+        self.assertEqual(list((self.dir / 'meridiana' / 'handover').glob('*.intent')), [])
+
+    def test_an_unusable_shared_folder_costs_only_the_merge(self):
+        reset = at(hours=2)
+        blocked = self.dir / 'blocked'
+        blocked.write_text('a file where the folder should be')
+        with mock.patch.dict(os.environ, {'MERIDIANA_DIR': str(blocked)}):
+            self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, headers, _)] = self.server.requests
+        self.assertEqual(headers['Email'], 'me@example.com')
+        self.assertIn('no hand-over: NotADirectoryError', self.log_text())
+
+    def test_a_goon_that_emails_another_address_does_not_stand_in(self):
+        reset = at(hours=2)
+        self.goon_offers(reset, email='you@example.com')
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, headers, _)] = self.server.requests
+        self.assertEqual(headers['Email'], 'me@example.com')
+
+    def test_a_goon_that_emails_at_another_time_does_not_stand_in(self):
+        reset = at(hours=2)
+        self.goon_offers(reset + timedelta(hours=8))
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
+        [(_, headers, _)] = self.server.requests
+        self.assertEqual(headers['Email'], 'me@example.com')
 
     def test_a_weekly_limit_without_structured_info_is_read_from_its_text(self):
         self.watch(error_row("You've hit your weekly limit · resets 2pm (UTC)"))

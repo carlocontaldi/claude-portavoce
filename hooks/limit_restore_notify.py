@@ -8,21 +8,24 @@ import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 from limitwatch import (
-    CREDIT_KINDS,
     MARGIN,
     Cap,
+    Intent,
+    announcement,
     claim,
     describe_caps,
     effective_topic,
-    format_reset,
+    hand_over,
     lookup,
     release,
     sleep_until,
     stored_topic,
     subscribe_steps,
+    try_open,
 )
 from limitwatch import push as ntfy_push
 
@@ -59,27 +62,7 @@ def reset_groups(caps: list[Cap]) -> list[list[Cap]]:
     return groups
 
 
-def announcement(restored: list[Cap], pending: list[Cap]) -> str:
-    """Which caps have reset and which still hold; a spend cap only blocks the credit fallback, not the plan."""
-    names = describe_caps(restored)
-    if len(restored) == 1:
-        text = f'Your {names} has reset.'
-    else:
-        text = f'Your {names} have {"both" if len(restored) == 2 else "all"} reset.'
-    holding = [cap for cap in pending if cap.kind not in CREDIT_KINDS]
-    capped = [cap for cap in pending if cap.kind in CREDIT_KINDS]
-    if holding:
-        text += (
-            ' Still in force: ' + ', '.join(f'{cap.label} (until {format_reset(cap.reset)})' for cap in holding) + '.'
-        )
-    else:
-        text += ' You can continue.'
-    if capped:
-        text += f' Usage credits stay capped by your {capped[0].label} until {format_reset(capped[0].reset)}.'
-    return text
-
-
-def push(text, settings):
+def push(text, settings, with_email=True):
     ntfy_push(
         NTFY_URL,
         settings['ntfy_topic'],
@@ -88,7 +71,7 @@ def push(text, settings):
         title='Claude limit restored',
         tags='parrot,white_check_mark',
         icon=ICON_URL,
-        email=settings['notify_email'],
+        email=settings['notify_email'] if with_email else '',
         token=settings['ntfy_token'],
     )
 
@@ -102,8 +85,19 @@ def announce(group: list[Cap], later: list[Cap], settings) -> None:
         return
     try:
         log(f'{describe_caps(group)}; will push at {reset + MARGIN:%Y-%m-%d %H:%M:%S}Z')
-        sleep_until(reset + MARGIN)
-        push(announcement(group, [cap for cap in later if cap.reset > reset]), settings)
+        at = reset + MARGIN
+        intent = try_open(Intent(at, settings['notify_email']), log)  # tells a Goon about to email that this is coming
+        try:
+            sleep_until(at)
+            pending = [cap for cap in later if cap.reset > reset]
+            text = announcement(group, pending)
+            phone_only = partial(push, text, settings, with_email=False)
+            emailed_by_goon = hand_over(at, group, pending, settings['notify_email'], log, on_goon=phone_only)
+        finally:
+            if intent:
+                intent.close()
+        if not emailed_by_goon:
+            push(text, settings)
     finally:
         release(fd, marker)
 
