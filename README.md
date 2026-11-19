@@ -18,8 +18,6 @@ Claude Code stops when a 5-hour, weekly, per-model (Opus, Sonnet, Fable) or spen
   <img src="assets/portavoce-banner.png" alt="" width="1280"><br>
 </p1>
 
-<br>
-
 **Token-free.** It makes no model calls: the waiting is done by a plain Python process, and the hook fires after Claude has already stopped and prints nothing, so it adds nothing to the conversation and costs none of your usage. The `/portavoce` commands run a local script and make no model call either.
 
 How it works: a `StopFailure` hook (matcher `rate_limit`) hands the event to a detached watcher and returns at once. The watcher reads the caps from the limit error at the end of the transcript (its `rate_limit_info`, else the `resets ... (zone)` time in the message), sleeps until reset + 60 s, then POSTs to `ntfy.sh/<topic>`. When the error also reports a spend cap (Claude Code's "individual" or "monthly spend limit"), a cap that resets later gets its own push when it does, and caps resetting within two minutes of each other share one. The error does not say whether a spend cap is daily, weekly or monthly, so Portavoce infers it from the reset time (more than a week away or at the turn of a month: monthly; one to seven days: weekly; the error's own daily flag: daily) and keeps "individual spend limit" when it cannot tell. One watcher runs per reset time. A limit message with no reset time is only logged. A window cap is waited for up to 8 days, a spend cap up to 35. The watcher is an ordinary background process: it outlives the terminal and the Claude session, but not a reboot or shutdown, and a push that falls due while the machine is off is never sent.
