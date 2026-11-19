@@ -10,7 +10,15 @@
 >
 > *From* portare, *to carry, and* voce, *voice.*
 
+<br>
+
 Claude Code stops when a 5-hour, weekly, per-model (Opus, Sonnet, Fable) or spend limit is hit. Claude Portavoce speaks for it while it can't: it watches the clock for you and sends a push, and an email through ntfy, a minute after each cap resets, with no terminal or Claude session left open. The message says which caps came back, and whether another one still holds.
+
+<p1 align="center">
+  <img src="assets/portavoce-banner.png" alt="" width="1280"><br>
+</p1>
+
+<br>
 
 **Token-free.** It makes no model calls: the waiting is done by a plain Python process, and the hook fires after Claude has already stopped and prints nothing, so it adds nothing to the conversation and costs none of your usage. The `/portavoce` commands run a local script and make no model call either.
 
