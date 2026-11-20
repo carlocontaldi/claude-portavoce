@@ -18,15 +18,28 @@
     "notify_email": {
       "type": "string",
       "title": "Notification email",
-      "description": "Where ntfy sends the limit-restored email.",
-      "required": true
+      "description": "Optional. Where ntfy sends the limit-restored email; leave empty to push to the phone only.",
+      "required": false
     },
     "ntfy_token": {
       "type": "string",
       "title": "ntfy access token",
-      "description": "Your ntfy.sh access token; ntfy.sh refuses emails from anonymous requests.",
-      "required": true,
+      "description": "Optional. Needed only for the email; ntfy.sh refuses emails from anonymous requests.",
+      "required": false,
       "sensitive": true
+    },
+    "show_parrot": {
+      "type": "boolean",
+      "title": "Show the parrot emoji",
+      "description": "On by default. Includes \ud83e\udd9c at the start of ntfy push and email titles; turn off for plain titles.",
+      "default": true,
+      "required": false
+    },
+    "delay_seconds": {
+      "type": "string",
+      "title": "Post-reset delay",
+      "description": "Seconds to wait after the reset time before notifying, 0 to 86400 (default: 60).",
+      "required": false
     }
   }
 }

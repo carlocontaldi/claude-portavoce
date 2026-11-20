@@ -4,10 +4,11 @@ A detached `--watch` copy reads the caps from the transcript, sleeps until each 
 
 import json
 import os
+import re
 import subprocess
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
 
@@ -36,6 +37,7 @@ TOPIC_PREFIX = 'claude-portavoce'
 ICON_URL = 'https://raw.githubusercontent.com/carlocontaldi/claude-portavoce/main/assets/portavoce-icon-64.png'
 LOOKUP_TRIES = 10  # the limit error may not be in the transcript yet when the hook fires
 GROUP = 120  # seconds: caps resetting this close together are announced in one push
+MAX_DELAY = 86_400  # seconds: a longer delay is more likely a typo than a plan
 
 
 def log(msg):
@@ -45,10 +47,29 @@ def log(msg):
 
 
 def read_settings():
-    names = ('ntfy_topic', 'notify_email', 'ntfy_token')
+    names = ('ntfy_topic', 'notify_email', 'ntfy_token', 'show_parrot', 'delay_seconds')
     settings = {n: os.environ.get(f'CLAUDE_PLUGIN_OPTION_{n.upper()}', '').strip() for n in names}
     settings['ntfy_topic'] = effective_topic(settings['ntfy_topic'], DIR / 'topic', TOPIC_PREFIX)
     return settings
+
+
+def shows_parrot(settings) -> bool:
+    return settings['show_parrot'].lower() not in ('false', '0', 'no', 'off')
+
+
+def delay(settings):
+    """`delay_seconds` as a wait; None unless it is a whole number of seconds from 0 to MAX_DELAY."""
+    try:
+        seconds = int(settings['delay_seconds'])
+    except ValueError:
+        return None
+    return timedelta(seconds=seconds) if 0 <= seconds <= MAX_DELAY else None
+
+
+def margin(settings) -> timedelta:
+    """The wait past a reset before the push: `delay_seconds` when it is usable, else MARGIN."""
+    chosen = delay(settings)
+    return MARGIN if chosen is None else chosen
 
 
 def reset_groups(caps: list[Cap]) -> list[list[Cap]]:
@@ -63,14 +84,18 @@ def reset_groups(caps: list[Cap]) -> list[list[Cap]]:
 
 
 def push(text, settings, with_email=True):
+    title = '🦜✅ Claude limit restored'
+    if not shows_parrot(settings):
+        title = re.sub(r'^\W+', '', title)  # the emoji the title starts with
+    emailing = with_email and settings['notify_email'] and settings['ntfy_token']  # ntfy.sh refuses anonymous email
     ntfy_push(
         NTFY_URL,
         settings['ntfy_topic'],
         text,
         log,
-        title='🦜✅ Claude limit restored',
+        title=title,
         icon=ICON_URL,
-        email=settings['notify_email'] if with_email else '',
+        email=settings['notify_email'] if emailing else '',
         token=settings['ntfy_token'],
         signature='Claude Portavoce',
     )
@@ -84,8 +109,8 @@ def announce(group: list[Cap], later: list[Cap], settings) -> None:
         log(f'already watching the {reset:%Y-%m-%d %H:%M}Z reset')
         return
     try:
-        log(f'{describe_caps(group)}; will push at {reset + MARGIN:%Y-%m-%d %H:%M:%S}Z')
-        at = reset + MARGIN
+        at = reset + margin(settings)
+        log(f'{describe_caps(group)}; will push at {at:%Y-%m-%d %H:%M:%S}Z')
         intent = try_open(Intent(at, settings['notify_email']), log)  # tells a Goon about to email that this is coming
         try:
             sleep_until(at)
@@ -104,9 +129,12 @@ def announce(group: list[Cap], later: list[Cap], settings) -> None:
 
 def watch(payload):
     settings = read_settings()
-    if missing := [n for n, v in settings.items() if not v]:  # fail now, not after sleeping until the reset
-        log(f'missing plugin options: {", ".join(missing)}')
-        return
+    if settings['notify_email'] and not settings['ntfy_token']:
+        log('email set without an ntfy token: ntfy.sh refuses it, so the push goes to the phone only')
+    if settings['delay_seconds'] and delay(settings) is None:
+        log(
+            f'ignoring delay_seconds {settings["delay_seconds"]!r}: not a whole number of seconds from 0 to {MAX_DELAY}'
+        )
     limit = lookup(payload.get('transcript_path'), LOOKUP_TRIES)
     if not limit:
         log(
@@ -142,7 +170,7 @@ def send_test(settings):
         'Claude Portavoce test: if you can read this, the topic works.',
         log,
         title='Claude Portavoce test',
-        tags='parrot,bell',
+        tags='parrot,bell' if shows_parrot(settings) else 'bell',
         icon=ICON_URL,
         token=settings['ntfy_token'],
     )

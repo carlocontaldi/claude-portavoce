@@ -5,11 +5,13 @@ const WORDS = ['topic', 'topic new', 'test']
 
 let topicOption = ''
 let tokenOption = ''
+let parrotOption = ''
 
 // The script reads these options from its environment, as it does when a hook runs it.
 const scriptEnv = () => ({
   ...(topicOption === '' ? {} : { CLAUDE_PLUGIN_OPTION_NTFY_TOPIC: topicOption }),
   ...(tokenOption === '' ? {} : { CLAUDE_PLUGIN_OPTION_NTFY_TOKEN: tokenOption }),
+  ...(parrotOption === '' ? {} : { CLAUDE_PLUGIN_OPTION_SHOW_PARROT: parrotOption }),
 })
 
 const portavoce = ($: EngineInterface, args: string[]) =>
@@ -18,6 +20,7 @@ const portavoce = ($: EngineInterface, args: string[]) =>
 export const register: Register = (on, options) => {
   topicOption = String(options.ntfy_topic ?? '').trim()
   tokenOption = String(options.ntfy_token ?? '').trim()
+  parrotOption = String(options.show_parrot ?? '').trim()
 
   on('session.start', async ($, e, next) => {
     await $.command.register({

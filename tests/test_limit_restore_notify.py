@@ -56,7 +56,16 @@ class SettingsTest(WithLogDir):
         env = {'CLAUDE_PLUGIN_OPTION_NTFY_TOPIC': ' topic ', 'CLAUDE_PLUGIN_OPTION_NTFY_TOKEN': 'tk'}
         with mock.patch.dict(os.environ, env):
             os.environ.pop('CLAUDE_PLUGIN_OPTION_NOTIFY_EMAIL', None)
-            self.assertEqual(notify.read_settings(), {'ntfy_topic': 'topic', 'notify_email': '', 'ntfy_token': 'tk'})
+            self.assertEqual(
+                notify.read_settings(),
+                {
+                    'ntfy_topic': 'topic',
+                    'notify_email': '',
+                    'ntfy_token': 'tk',
+                    'show_parrot': '',
+                    'delay_seconds': '',
+                },
+            )
 
     def test_an_unset_or_empty_topic_option_gets_a_private_topic_that_is_kept(self):
         for value in (None, '  '):
@@ -73,16 +82,22 @@ class SettingsTest(WithLogDir):
             self.assertEqual(notify.read_settings()['ntfy_topic'], 'mine')
         self.assertFalse((self.dir / 'topic').exists())
 
-    def test_watch_reports_missing_options_before_doing_anything_else(self):
-        env = {
-            'CLAUDE_PLUGIN_OPTION_NTFY_TOPIC': 't',
-            'CLAUDE_PLUGIN_OPTION_NOTIFY_EMAIL': '',
-            'CLAUDE_PLUGIN_OPTION_NTFY_TOKEN': 'k',
-        }
-        with mock.patch.dict(os.environ, env), mock.patch.object(notify, 'sleep_until') as sleep:
-            notify.watch({'transcript_path': None})
-        self.assertIn('missing plugin options: notify_email', self.log_text())
-        sleep.assert_not_called()
+
+class MarginTest(unittest.TestCase):
+    def test_a_number_of_seconds_replaces_the_default_wait(self):
+        self.assertEqual(notify.margin({'delay_seconds': '120'}), timedelta(seconds=120))
+        self.assertEqual(notify.margin({'delay_seconds': '0'}), timedelta(0))
+
+    def test_an_empty_or_unusable_value_keeps_the_default(self):
+        for value in ('', 'soon', '90s', '1.5', '-30', '86401', '99999999999999'):
+            self.assertEqual(notify.margin({'delay_seconds': value}), notify.MARGIN, value)
+
+    def test_a_day_is_the_longest_delay(self):
+        self.assertEqual(notify.margin({'delay_seconds': '86400'}), timedelta(days=1))
+
+    def test_only_the_listed_words_turn_the_parrot_off(self):
+        for value, expected in (('', True), ('true', True), ('false', False), ('Off', False), ('0', False)):
+            self.assertEqual(notify.shows_parrot({'show_parrot': value}), expected, value)
 
 
 class ResetGroupsTest(unittest.TestCase):
@@ -160,7 +175,13 @@ def title_of(headers):
 
 
 SIGNED = '\n\n— Claude Portavoce'  # ends every email, never a push to the phone alone
-SETTINGS = {'ntfy_topic': 'secret-topic', 'notify_email': 'me@example.com', 'ntfy_token': 'tk_secret'}
+SETTINGS = {
+    'ntfy_topic': 'secret-topic',
+    'notify_email': 'me@example.com',
+    'ntfy_token': 'tk_secret',
+    'show_parrot': '',
+    'delay_seconds': '',
+}
 ENV = {f'CLAUDE_PLUGIN_OPTION_{k.upper()}': v for k, v in SETTINGS.items()}
 
 
@@ -183,10 +204,10 @@ class WatchTest(WithLogDir):
         poll.start()
         self.addCleanup(poll.stop)
 
-    def watch(self, *rows):
+    def watch(self, *rows, env=ENV):
         transcript = self.dir / 'transcript.jsonl'
         transcript.write_text('\n'.join(rows) + '\n')
-        with mock.patch.dict(os.environ, ENV):
+        with mock.patch.dict(os.environ, env):
             notify.watch({'transcript_path': str(transcript)})
 
     def bodies(self):
@@ -202,6 +223,36 @@ class WatchTest(WithLogDir):
         self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.' + SIGNED])
         self.sleep_until.assert_called_once_with(reset + notify.MARGIN)
         self.assertEqual(list(self.dir.glob('*.lock')), [])
+
+    def test_without_an_email_or_a_token_the_push_goes_to_the_phone_alone(self):
+        env = {**ENV, 'CLAUDE_PLUGIN_OPTION_NOTIFY_EMAIL': '', 'CLAUDE_PLUGIN_OPTION_NTFY_TOKEN': ''}
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(at(hours=2).timestamp())), env=env)
+        [(_, headers, _)] = self.server.requests
+        self.assertNotIn('Email', headers)
+        self.assertNotIn('Authorization', headers)
+        self.assertEqual(self.bodies(), ['Your 5-hour limit has reset. You can continue.'])
+
+    def test_an_email_without_a_token_is_not_asked_for_because_ntfy_refuses_it(self):
+        env = {**ENV, 'CLAUDE_PLUGIN_OPTION_NTFY_TOKEN': ''}
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(at(hours=2).timestamp())), env=env)
+        [(_, headers, _)] = self.server.requests
+        self.assertNotIn('Email', headers)
+        self.assertIn('email set without an ntfy token', self.log_text())
+
+    def test_an_unusable_delay_is_logged_and_the_default_wait_is_used(self):
+        reset = at(hours=2)
+        env = {**ENV, 'CLAUDE_PLUGIN_OPTION_DELAY_SECONDS': '90s'}
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())), env=env)
+        self.assertIn("ignoring delay_seconds '90s'", self.log_text())
+        self.sleep_until.assert_called_once_with(reset + notify.MARGIN)
+
+    def test_a_delay_option_moves_the_push_and_the_parrot_option_removes_the_emoji(self):
+        reset = at(hours=2)
+        env = {**ENV, 'CLAUDE_PLUGIN_OPTION_DELAY_SECONDS': '5', 'CLAUDE_PLUGIN_OPTION_SHOW_PARROT': 'false'}
+        self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())), env=env)
+        [(_, headers, _)] = self.server.requests
+        self.assertEqual(title_of(headers), 'Claude limit restored')
+        self.sleep_until.assert_called_once_with(reset + timedelta(seconds=5))
 
     def goon_offers(self, reset, email=SETTINGS['notify_email'], answer=None):
         """A Goon watcher that will email at the reset; `answer(offer)` plays it once Portavoce leaves a note."""
