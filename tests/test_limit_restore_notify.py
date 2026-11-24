@@ -506,6 +506,7 @@ class PushCommandTest(WithLogDir):
 
 
 class LogTest(WithLogDir):
+    @unittest.skipIf(os.name == 'nt', 'POSIX modes')
     def test_the_log_is_readable_by_its_owner_only(self):
         self.addCleanup(os.umask, os.umask(0o022))
         notify.log('x')
@@ -528,7 +529,7 @@ class IconTest(unittest.TestCase):
 
 class VendoredTest(unittest.TestCase):
     def test_the_copy_of_limitwatch_matches_the_hash_in_its_header(self):
-        _, header, body = (HOOKS / 'limitwatch.py').read_text().split('\n', 2)
+        _, header, body = (HOOKS / 'limitwatch.py').read_text(encoding='utf-8').split('\n', 2)
         stated = re.search(r'sha256: ([0-9a-f]{64})', header).group(1)
         self.assertEqual(hashlib.sha256(body.encode()).hexdigest(), stated)
 

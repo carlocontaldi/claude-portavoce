@@ -26,7 +26,7 @@ What leaves your machine: one HTTPS request to ntfy.sh (or to the server in `POR
 
 ## Requirements
 
-- A POSIX system (the script uses `fcntl.flock`; only Linux is tested) and Python 3.9 or newer, standard library only.
+- Linux, macOS, or Windows (uses `fcntl.flock` on POSIX and `msvcrt.locking` on Windows; CI gates on Linux only, its Windows leg is informational) and Python 3.9 or newer, standard library only. The hooks and slash commands run `python3`, or `python` when there is no working `python3`. The hook line is shell script, so on Windows it needs Git for Windows, which is Claude Code's default hook shell there; PowerShell cannot read it. Python on Windows has no time zone database: there, `pip install tzdata`; without it a reset stated in a named zone is not understood.
 - An [ntfy.sh](https://ntfy.sh) account and access token. ntfy.sh refuses emails from anonymous requests (HTTP 400, code 40053 when last tried, 2026-10-20), and the free tier allowed 5 emails a day.
 
 ## Install
