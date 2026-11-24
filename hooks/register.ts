@@ -1,11 +1,10 @@
 import type { EngineInterface, Register } from 'claude-code'
 
+const HOOK_TIMEOUT_MS = 20_000
 const USAGE = 'Use /portavoce topic, /portavoce topic new or /portavoce test.'
 const WORDS = ['topic', 'topic new', 'test']
 
-let topicOption = ''
-let tokenOption = ''
-let parrotOption = ''
+let optionEnv: Record<string, string> = {}
 
 // `python3` where it runs, else `python`: a Windows install often has only `python`, a Linux one only `python3`.
 let python: Promise<string> | undefined
@@ -25,21 +24,21 @@ const pickPython = async ($: EngineInterface) => {
 
 const interpreter = ($: EngineInterface) => (python ??= pickPython($))
 
-// The script reads these options from its environment, as it does when a hook runs it.
-const scriptEnv = () => ({
-  ...(topicOption === '' ? {} : { CLAUDE_PLUGIN_OPTION_NTFY_TOPIC: topicOption }),
-  ...(tokenOption === '' ? {} : { CLAUDE_PLUGIN_OPTION_NTFY_TOKEN: tokenOption }),
-  ...(parrotOption === '' ? {} : { CLAUDE_PLUGIN_OPTION_SHOW_PARROT: parrotOption }),
-})
-
-const portavoce = ($: EngineInterface, args: string[]) =>
-  interpreter($).then(command => $.process.run([command, `${$.plugin.root}/hooks/limit_restore_notify.py`, ...args], { env: scriptEnv() }))
+// The script reads the options from its environment, as it does when Claude Code runs it as a hook.
+const portavoce = async ($: EngineInterface, args: string[], stdin?: string) =>
+  $.process.run([await interpreter($), `${$.plugin.root}/hooks/limit_restore_notify.py`, ...args], {
+    env: optionEnv,
+    ...(stdin === undefined ? {} : { stdin, timeoutMs: HOOK_TIMEOUT_MS }),
+  })
 
 export const register: Register = (on, options) => {
   python = undefined
-  topicOption = String(options.ntfy_topic ?? '').trim()
-  tokenOption = String(options.ntfy_token ?? '').trim()
-  parrotOption = String(options.show_parrot ?? '').trim()
+  optionEnv = Object.fromEntries(
+    Object.entries(options).flatMap(([name, value]) => {
+      const text = String(value ?? '').trim()
+      return text === '' ? [] : [[`CLAUDE_PLUGIN_OPTION_${name.toUpperCase()}`, text]]
+    }),
+  )
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -47,6 +46,12 @@ export const register: Register = (on, options) => {
       description: 'Show the ntfy topic to subscribe the phone to, or send a test push',
       argumentHint: 'topic|topic new|test',
     })
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // The StopFailure hook runs here, as a module hook, and not as a shell command: no particular shell is needed.
+  on('classic.StopFailure', async ($, e, next) => {
+    if (e.error === 'rate_limit') await portavoce($, [], JSON.stringify(e)).catch(() => undefined)
     return next(e)
   }).catch(($, e, next) => next(e))
 
