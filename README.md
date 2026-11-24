@@ -43,7 +43,7 @@ From a shell:
 claude plugin install portavoce --marketplace carlocontaldi/claude-portavoce
 ```
 
-If `~/.claude/settings.json` already registers `limit_restore_notify.py` under `hooks.StopFailure`, remove that entry so the hook is not registered twice.
+A hook registered twice, for example by an old `hooks.StopFailure` entry for `limit_restore_notify.py` in `~/.claude/settings.json`, still does its work once: the script remembers each hook input for an hour and ignores a second delivery of it.
 
 ## Configure
 

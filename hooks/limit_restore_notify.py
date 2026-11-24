@@ -21,6 +21,7 @@ from limitwatch import (
     describe_caps,
     effective_topic,
     hand_over,
+    is_first_delivery,
     lookup,
     release,
     sleep_until,
@@ -192,6 +193,8 @@ def main():
             log(traceback.format_exc())
         return
     raw = sys.stdin.buffer.read()
+    if not is_first_delivery('portavoce', raw):
+        return
     kwargs = (
         {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
         if os.name == 'nt'

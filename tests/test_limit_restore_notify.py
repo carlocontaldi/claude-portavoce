@@ -475,6 +475,25 @@ class TopicCommandTest(WithLogDir):
         self.assertIn('private ntfy topic', out.getvalue())
 
 
+class HookEntryTest(WithLogDir):
+    def run_hook(self, payload):
+        stdin = mock.Mock(buffer=io.BytesIO(json.dumps(payload).encode()))
+        with mock.patch.object(sys, 'argv', ['x']), mock.patch.object(sys, 'stdin', stdin):
+            with mock.patch.object(notify.subprocess, 'Popen') as popen:
+                notify.main()
+        return popen
+
+    def test_the_same_stop_delivered_twice_starts_one_watcher(self):
+        stop = {'session_id': 's1', 'prompt_id': 'p1', 'error': 'rate_limit', 'last_assistant_message': 'resets 3pm'}
+        self.run_hook(stop).assert_called_once()
+        self.run_hook(stop).assert_not_called()
+
+    def test_another_prompt_stopping_starts_another_watcher(self):
+        stop = {'session_id': 's1', 'prompt_id': 'p1', 'error': 'rate_limit'}
+        self.run_hook(stop).assert_called_once()
+        self.run_hook({**stop, 'prompt_id': 'p2'}).assert_called_once()
+
+
 class PushCommandTest(WithLogDir):
     def setUp(self):
         super().setUp()
