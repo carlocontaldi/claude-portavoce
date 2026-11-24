@@ -26,7 +26,7 @@ What leaves your machine: one HTTPS request to ntfy.sh (or to the server in `POR
 
 ## Requirements
 
-- A POSIX system (the script uses `fcntl.flock`; only Linux is tested) and Python 3.9 or newer, standard library only.
+- Windows and Linux, and Python 3.9 or newer with the standard library only.
 - An [ntfy.sh](https://ntfy.sh) account and access token. ntfy.sh refuses emails from anonymous requests (HTTP 400, code 40053 when last tried, 2026-10-20), and the free tier allowed 5 emails a day.
 
 ## Install
@@ -96,7 +96,7 @@ The zone in the limit message is the IANA zone of the machine running Claude Cod
 `hooks/limitwatch.py` is a copy of [claude-meridiana](https://github.com/carlocontaldi/claude-meridiana), shared with Claude Goon; change it there and run its `sync.py`, not here. A test fails if the copy no longer matches its header.
 
 ```
-python3 -m unittest discover -s tests
+python -m unittest discover -s tests
 claude plugin test .
 ```
 

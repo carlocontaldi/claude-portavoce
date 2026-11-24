@@ -13,7 +13,7 @@ const scriptEnv = () => ({
 })
 
 const portavoce = ($: EngineInterface, args: string[]) =>
-  $.process.run(['python3', `${$.plugin.root}/hooks/limit_restore_notify.py`, ...args], { env: scriptEnv() })
+  $.process.run(['python', `${$.plugin.root}/hooks/limit_restore_notify.py`, ...args], { env: scriptEnv() })
 
 export const register: Register = (on, options) => {
   topicOption = String(options.ntfy_topic ?? '').trim()

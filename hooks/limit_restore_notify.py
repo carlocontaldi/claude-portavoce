@@ -164,12 +164,13 @@ def main():
             log(traceback.format_exc())
         return
     raw = sys.stdin.buffer.read()
+    kwargs = {'creationflags': subprocess.DETACHED_PROCESS} if os.name == 'nt' else {'start_new_session': True}
     child = subprocess.Popen(
         [sys.executable, os.path.abspath(__file__), '--watch'],
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        **kwargs,
     )
     child.stdin.write(raw)
     child.stdin.close()

@@ -458,7 +458,8 @@ class LogTest(WithLogDir):
     def test_the_log_is_readable_by_its_owner_only(self):
         self.addCleanup(os.umask, os.umask(0o022))
         notify.log('x')
-        self.assertEqual(os.stat(self.dir / 'log.txt').st_mode & 0o777, 0o600)
+        if os.name != 'nt':
+            self.assertEqual(os.stat(self.dir / 'log.txt').st_mode & 0o777, 0o600)
 
 
 class NtfyUrlTest(unittest.TestCase):
@@ -477,7 +478,8 @@ class IconTest(unittest.TestCase):
 
 class VendoredTest(unittest.TestCase):
     def test_the_copy_of_limitwatch_matches_the_hash_in_its_header(self):
-        _, header, body = (HOOKS / 'limitwatch.py').read_text().split('\n', 2)
+        lines = (HOOKS / 'limitwatch.py').read_text().split('\n', 2)
+        _, header, body = lines
         stated = re.search(r'sha256: ([0-9a-f]{64})', header).group(1)
         self.assertEqual(hashlib.sha256(body.encode()).hexdigest(), stated)
 
