@@ -342,7 +342,9 @@ class WatchTest(WithLogDir):
             self.watch(error_row(rateLimitType='five_hour', resetsAt=int(reset.timestamp())))
         [(_, headers, _)] = self.server.requests
         self.assertEqual(headers['Email'], 'me@example.com')
-        self.assertIn('no hand-over: NotADirectoryError', self.log_text())
+        self.assertRegex(
+            self.log_text(), r'no hand-over: (NotADirectoryError|FileExistsError)'
+        )  # Windows says the latter
 
     def test_a_goon_that_emails_another_address_does_not_stand_in(self):
         reset = at(hours=2)
