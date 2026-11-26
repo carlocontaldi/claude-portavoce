@@ -2,5 +2,18 @@
   "description": "Notify when a usage limit resets",
   "modules": [
     "./register.ts"
-  ]
+  ],
+  "hooks": {
+    "StopFailure": [
+      {
+        "matcher": "rate_limit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in python3 python; do if \"$p\" -c '' >/dev/null 2>&1; then exec \"$p\" \"${CLAUDE_PLUGIN_ROOT}/hooks/limit_restore_notify.py\"; fi; done; echo 'portavoce: no working python3 or python on PATH' >&2; exit 1"
+          }
+        ]
+      }
+    ]
+  }
 }
